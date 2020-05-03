@@ -131,6 +131,7 @@ First we need to create a `reana.yaml <reana.yaml>`_ file describing the
 structure of our analysis with its inputs, the code, the runtime environment,
 the computational workflow steps and the expected outputs:
 
+
 .. code-block:: yaml
 
     version: 0.3.0
@@ -156,52 +157,220 @@ the computational workflow steps and the expected outputs:
     outputs:
       files:
        - results/greetings.txt
-
-
-In case you are using CWL or Yadage workflow specifications:
-
-- `reana.yaml using CWL <reana-cwl.yaml>`_
-- `reana.yaml using Yadage <reana-yadage.yaml>`_
-
+       
 We can now install the REANA command-line client, run the analysis and download the resulting file:
+
+1. Prerequisites
+-----------------
+
+REANA cluster uses Kubernetes container orchestration system. The best way to try it out locally on your laptop is to install (follow instructions at https://reana-cluster.readthedocs.io/en/latest/userguide.html#delete-reana-cluster-deployment):
+   - docker 
+   - helm
+   - kubectl 
+   - minikube
+   - virtualbox 
+   
+2. Start minikube
+-----------------
+
+Once you have installed kubectl and minikube, you can start minikube by running:
+
+.. code-block:: console
+
+    $ # start minikube
+    $ minikube config set memory 4096
+    $ minikube start --vm-driver=virtualbox --feature-gates="TTLAfterFinished=true"
+    
+3. Install reana-cluster
+-----------------
 
 .. code-block:: console
 
     $ # create new virtual environment
-    $ virtualenv ~/.virtualenvs/reana
-    $ source ~/.virtualenvs/reana/bin/activate
-    $ # install REANA client
+    $ virtualenv ~/.virtualenvs/myreana
+    $ source ~/.virtualenvs/myreana/bin/activate
+    $ # install reana-cluster utility
+    $ pip install reana-cluster
+    
+4. Start reana-cluster
+-----------------
+
+.. code-block:: console
+
+    $ reana-cluster init
+    REANA cluster is initialised.
+    
+This may take a couple of minutes. You can verify whether the REANA cluster is ready to serve the user requests by running the ``status`` command:
+
+.. code-block:: console
+
+    $ reana-cluster status
+    COMPONENT             STATUS           
+    message-broker        Running          
+    server                ContainerCreating
+    workflow-controller   ContainerCreating
+    db                    ContainerCreating
+    cache                 ContainerCreating
+    REANA cluster is not ready.
+    $
+    $ reana-cluster status
+    COMPONENT             STATUS           
+    message-broker        Running          
+    server                Running
+    workflow-controller   Running
+    db                    Running
+    cache                 Running
+    REANA cluster is ready.
+    
+5. Display commands to set up the environment for the REANA client
+-----------------
+
+You can print the list of commands to configure the environment for the reana-client:
+
+.. code-block:: console
+
+    $ reana-cluster env --include-admin-token
+    export REANA_SERVER_URL=http://192.168.39.247:31106
+    export REANA_ACCESS_TOKEN=pE2Q3It1C-fjisismHD7djAAjk6alkf0ADRZlg_nYY76k
+
+You can execute the displayed command as:
+
+.. code-block:: console
+
+    $ eval $(reana-cluster env --include-admin-token)
+    
+You can now run REANA examples on the locally-deployed cluster using reana-client.
+
+6. Install REANA client
+
+.. code-block:: console
+
     $ pip install reana-client
-    $ # connect to some REANA cloud instance
-    $ export REANA_SERVER_URL=https://reana.cern.ch/
-    $ export REANA_ACCESS_TOKEN=XXXXXXX
-    $ # create a new workflow
-    $ reana-client create -n myanalysis
-    $ export REANA_WORKON=myanalysis
-    $ # upload input code, data and workflow to the workspace
-    $ reana-client upload
-    $ # start computational workflow
-    $ reana-client start
-    $ # should take about a minute
-    $ reana-client status
+   
+You now should be able to comunicate with the REANA cloud. You can test the connection doing:
+
+.. code-block:: console
+
+    $ reana-client ping
+    Server is running.
+
+If you have an error message like: 
+
+.. code-block:: console
+
+    $ reana-client ping
+    Could not connect to the selected REANA cluster server at http://192.168.39.247:31106.
+    
+Try adding an "s" to the adress, doing:    
+
+.. code-block:: console
+
+    $ export REANA_SERVER_URL=https://192.168.39.247:31106
+    
+Now, `` reana-client ping ` should work.
+    
+7. Run the analysis
+
+You can now create a new computational workflow:
+
+.. code-block:: console
+
+    $ reana-client create
+    workflow.1
+    
+You can check the status of our previously created workflow:
+
+.. code-block:: console
+
+    $ reana-client status -w workflow.1
+    NAME       RUN_NUMBER   CREATED               STATUS    PROGRESS
+    workflow   1            2018-08-10T07:27:15   created   -/-
+
+Instead of passing -w argument with the workflow name every time, we can define a new environment variable REANA_WORKON which specifies the workflow we would like to work on:
+
+
+.. code-block:: console
+
+    $ export REANA_WORKON=workflow.1
+
+Now, to upload the code:
+
+.. code-block:: console
+
+    $ reana-client upload ./code/helloworld.py
+    File code/helloworld.py was successfully uploaded.
+    $ reana-client upload ./data/names.txt
+    File data/names.txt was successfully uploaded.
+    
+and check whether it was well seeded into our input workspace:
+
+.. code-block:: console
+
     $ # list workspace files
     $ reana-client ls
-    $ # download output results
+    NAME                 SIZE   LAST-MODIFIED
+    data/names.txt         18   2018-08-10T07:31:15
+    code/helloworld.py   2905   2018-08-10T07:29:54    
+    
+Now that the input data and code was uploaded, we can start the workflow execution:
+
+.. code-block:: console
+
+    $ # start computational workflow
+    $ reana-client start
+    workflow.1 has been started.
+
+Let us enquire about its running status; we may see that it is still in the “running” state:
+
+.. code-block:: console
+
+    $ reana-client status
+    NAME       RUN_NUMBER   CREATED               STATUS    PROGRESS
+    workflow   1            2018-08-10T07:27:15   running   -/-
+
+    $ reana-client status
+    NAME       RUN_NUMBER   CREATED               STATUS    PROGRESS
+    workflow   1            2018-08-10T07:27:15   running   0/1
+
+After a few minutes, the workflow should be finished:
+
+.. code-block:: console
+
+    $ reana-client status
+    NAME       RUN_NUMBER   CREATED               STATUS     PROGRESS
+    workflow   1            2018-08-10T07:27:15   finished   1/1
+    
+You can now check the list of output files:
+
+.. code-block:: console
+
+    $ reana-client ls
+    NAME                    SIZE   LAST-MODIFIED
+    code/helloworld.py      2905   2018-08-06T13:58:21
+    data/names.txt            18   2018-08-06T13:59:59
+    results/greetings.txt     32   2018-08-06T14:01:02
+
+and download the resulting output file:
+
+.. code-block:: console
+
     $ reana-client download results/greetings.txt
+    File results/greetings.txt downloaded to /home/reana/reanahub/reana-demo-helloworld.
 
-Please see the `REANA-Client <https://reana-client.readthedocs.io/>`_
-documentation for more detailed explanation of typical ``reana-client`` usage
-scenarios.
 
-Contributors
+The output will be
+
+.. code-block:: console
+
+    $ cat results/greetings.txt
+    Hello Jane Doe!
+    Hello Joe Bloggs!
+    
+ 
+For more details access:
 ============
 
-The list of contributors in alphabetical order:
-
-- `Anton Khodak <https://orcid.org/0000-0003-3263-4553>`_
-- `Diego Rodriguez <https://orcid.org/0000-0003-0649-2002>`_
-- `Dinos Kousidis <https://orcid.org/0000-0002-4914-4289>`_
-- `Harri Hirvonsalo <https://orcid.org/0000-0002-5503-510X>`_
-- `Jan Okraska <https://orcid.org/0000-0002-1416-3244>`_
-- `Marco Vidal <https://orcid.org/0000-0002-9363-4971>`_
-- `Tibor Simko <https://orcid.org/0000-0001-7202-5803>`_
+    - https://github.com/reanahub/reana-demo-helloworld
+    - https://reana-cluster.readthedocs.io/en/latest/gettingstarted.html
+    - https://reana-cluster.readthedocs.io/en/latest/userguide.html#delete-reana-cluster-deployment
+    - https://reana-client.readthedocs.io/en/latest/gettingstarted.html#install-reana-client
